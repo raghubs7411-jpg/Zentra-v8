@@ -12,6 +12,7 @@ import {
   CreditCard,
   Check,
   AlertCircle,
+  AlertTriangle,
   Package,
   Phone,
   RefreshCw,
@@ -24,6 +25,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { Customer, Product, SaleItem, PaymentMethod } from '../../types';
 import { calculateLineItem, calculateSaleTotals } from '../../utils/calculations';
 import { formatCurrency } from '../../utils/formatters';
@@ -39,12 +41,13 @@ interface NewSalePageProps {
 }
 
 export const NewSalePage: React.FC<NewSalePageProps> = ({ onSaleCompleted, onViewSaleDetail }) => {
-  const { customers, products, business, createSale, sales } = useApp();
+  const { customers, products, business, createSale, updateCustomer, sales } = useApp();
   const confirmDialog = useConfirm();
-
 
   // Selected Customer
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
+  const [creditBlock, setCreditBlock] = useState<{ projectedOutstanding: number; action: 'view' | 'print' | 'whatsapp' } | null>(null);
+  const [newCreditLimit, setNewCreditLimit] = useState('');
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [isQuickCustomerModalOpen, setIsQuickCustomerModalOpen] = useState(false);
@@ -202,16 +205,7 @@ export const NewSalePage: React.FC<NewSalePageProps> = ({ onSaleCompleted, onVie
       )
     : products.slice(0, 10);
 
-  const handleCompleteSale = (actionType: 'view' | 'print' | 'whatsapp' = 'view') => {
-    if (!selectedCustomerId) {
-      toast.error('Please select or create a customer before finalizing the sale.');
-      return;
-    }
-    if (items.length === 0) {
-      toast.error('Please add at least one product to the sale.');
-      return;
-    }
-
+  const finalizeSale = (actionType: 'view' | 'print' | 'whatsapp') => {
     try {
       const { sale } = createSale({
         customerId: selectedCustomerId,
@@ -237,6 +231,47 @@ export const NewSalePage: React.FC<NewSalePageProps> = ({ onSaleCompleted, onVie
     } catch (err: any) {
       toast.error(`Error creating sale: ${err.message}`);
     }
+  };
+
+  const handleCompleteSale = (actionType: 'view' | 'print' | 'whatsapp' = 'view') => {
+    if (!selectedCustomerId) {
+      toast.error('Please select or create a customer before finalizing the sale.');
+      return;
+    }
+    if (items.length === 0) {
+      toast.error('Please add at least one product to the sale.');
+      return;
+    }
+
+    // Credit limit check: block the sale if projected outstanding exceeds the customer's credit limit
+    if (selectedCustomer && selectedCustomer.creditLimit > 0) {
+      const projectedOutstanding = selectedCustomer.outstandingBalance + balanceDue;
+      if (projectedOutstanding > selectedCustomer.creditLimit) {
+        setNewCreditLimit(String(Math.ceil(projectedOutstanding / 1000) * 1000));
+        setCreditBlock({ projectedOutstanding, action: actionType });
+        return;
+      }
+    }
+
+    finalizeSale(actionType);
+  };
+
+  const handleProceedAfterLimitIncrease = () => {
+    if (!selectedCustomer || !creditBlock) return;
+    const newLimit = Number(newCreditLimit);
+    if (!newLimit || newLimit <= 0) {
+      toast.error('Please enter a valid credit limit.');
+      return;
+    }
+    if (newLimit < creditBlock.projectedOutstanding) {
+      toast.error(`New limit must be at least ${formatCurrency(creditBlock.projectedOutstanding)} (projected outstanding).`);
+      return;
+    }
+    updateCustomer(selectedCustomer.id, { creditLimit: newLimit });
+    toast.success(`Credit limit increased to ${formatCurrency(newLimit)} for ${selectedCustomer.name}`);
+    const action = creditBlock.action;
+    setCreditBlock(null);
+    finalizeSale(action);
   };
 
   // Ctrl+S keyboard shortcut to complete sale
@@ -879,6 +914,75 @@ export const NewSalePage: React.FC<NewSalePageProps> = ({ onSaleCompleted, onVie
           }
         }}
       />
+
+      {/* Credit Limit Exceeded Modal */}
+      <Dialog open={creditBlock !== null} onClose={() => setCreditBlock(null)} className="relative z-[110]">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden transition-all">
+            <div className="p-6 space-y-4">
+              <div className="flex items-start space-x-4">
+                <div className="shrink-0 w-11 h-11 rounded-xl bg-rose-50 flex items-center justify-center">
+                  <AlertTriangle className="w-6 h-6 text-rose-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <DialogTitle className="text-base font-bold text-slate-900">Credit Limit Exceeded</DialogTitle>
+                  <p className="text-sm text-slate-500 mt-1 leading-relaxed">
+                    This sale is blocked. <span className="font-semibold text-slate-700">{selectedCustomer?.name}</span>'s projected outstanding exceeds their credit limit. Increase the limit to complete this sale.
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 divide-y divide-slate-100 text-sm overflow-hidden">
+                <div className="flex justify-between px-4 py-2.5">
+                  <span className="text-slate-500">Current outstanding</span>
+                  <span className="font-bold text-slate-800">{formatCurrency(selectedCustomer?.outstandingBalance ?? 0)}</span>
+                </div>
+                <div className="flex justify-between px-4 py-2.5">
+                  <span className="text-slate-500">This sale (unpaid)</span>
+                  <span className="font-bold text-slate-800">{formatCurrency(balanceDue)}</span>
+                </div>
+                <div className="flex justify-between px-4 py-2.5 bg-rose-50">
+                  <span className="text-slate-600 font-semibold">Projected outstanding</span>
+                  <span className="font-black text-rose-600">{formatCurrency(creditBlock?.projectedOutstanding ?? 0)}</span>
+                </div>
+                <div className="flex justify-between px-4 py-2.5">
+                  <span className="text-slate-500">Current credit limit</span>
+                  <span className="font-bold text-slate-800">{formatCurrency(selectedCustomer?.creditLimit ?? 0)}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Increase credit limit to</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={newCreditLimit}
+                  onChange={(e) => setNewCreditLimit(e.target.value)}
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm font-bold focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setCreditBlock(null)}
+                  className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Cancel Sale
+                </button>
+                <button
+                  type="button"
+                  onClick={handleProceedAfterLimitIncrease}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow-md transition-all"
+                >
+                  Increase Limit & Complete Sale
+                </button>
+              </div>
+            </div>
+          </DialogPanel>
+        </div>
+      </Dialog>
     </div>
   );
 };
