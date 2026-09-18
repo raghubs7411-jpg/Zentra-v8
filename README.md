@@ -1,32 +1,39 @@
-# React + TypeScript + Vite
+# Zentra Suite v3.0 — VyaparFlow CRM
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+**Connected CRM, Billing, Stock & Payments** — business software for India's GST distributors.
 
-Currently, two official plugins are available:
+Built for medium-scale, single-product-category GST distributors billing ₹50K–1L per day on credit (khata), dispatching from stock, and filing GST monthly.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Getting started (one time only)
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+git clone https://github.com/raghubs7411-jpg/Zentra-v8.git
+cd Zentra-v8
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## How to update when new changes are pushed
+
+1. In VS Code, open the Source Control panel (Ctrl+Shift+G) and click **Sync Changes**, or run `git pull` in the terminal.
+2. That's it — Vite hot-reloads the app in the browser automatically.
+3. Run `npm install` again **only** when `package.json` changes (you will be told when it does).
+
+No re-downloading, no deleting folders, no re-extracting.
+
+## Project structure
+
+- `src/` — web app (React + TypeScript + Vite + Tailwind)
+- `mobile/` — React Native mobile app
+- `supabase/` — SQL migrations (17 tables + row-level security, GSTR-1 & overdue functions)
+
+## Feature highlights
+
+- GST billing — CGST / SGST / IGST, Bill of Supply, HSN/SAC search, 3 invoice templates (A4 GST, Classic, 80mm thermal)
+- Tiered pricing — retail / wholesale / dealer price per product
+- Customer khata — credit limits, payment terms, ageing analysis (0-30/60/90+), loyalty tiers
+- Inventory — live stock, low-stock alerts, adjustments, audit trail
+- Purchases — vendor credit days, due dates, overdue tracking
+- Delivery challans, WhatsApp invoice & reminder sharing
+- Multi-user roles with granular permissions
+- Offline-first — works without internet
