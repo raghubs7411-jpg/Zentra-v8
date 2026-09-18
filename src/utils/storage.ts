@@ -1,42 +1,10 @@
-import { AppState } from '../types';
-
-const STORAGE_KEY = 'vyaparflow_crm_state_v1';
-const QUOTA_WARNING_KEY = 'vyaparflow_quota_warned';
-
-export const saveStateToStorage = (state: AppState): void => {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    // Clear any previous quota warning once a save succeeds
-    if (sessionStorage.getItem(QUOTA_WARNING_KEY)) {
-      sessionStorage.removeItem(QUOTA_WARNING_KEY);
-    }
-  } catch (error) {
-    console.error('Failed to save state to localStorage', error);
-
-    // Surface quota-exceeded errors to the user so they don't silently lose data
-    if (error instanceof DOMException && (
-      error.name === 'QuotaExceededError' ||
-      error.name === 'NS_ERROR_DOM_QUOTA_REACHED'
-    )) {
-      if (!sessionStorage.getItem(QUOTA_WARNING_KEY)) {
-        sessionStorage.setItem(QUOTA_WARNING_KEY, '1');
-        // Use a CustomEvent so the Toaster can pick it up
-        window.dispatchEvent(new CustomEvent('storage-quota-exceeded'));
-      }
-    }
-  }
-};
-
-export const loadStateFromStorage = (): AppState | null => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as AppState;
-  } catch (error) {
-    console.error('Failed to load state from localStorage', error);
-    return null;
-  }
-};
+// Persistence now lives in src/services/storage — one module per entity
+// (customers, products, sales, ...), with automatic migration from the old
+// single-blob storage. These re-exports keep every existing import working.
+export {
+  saveAppState as saveStateToStorage,
+  loadAppState as loadStateFromStorage,
+} from '../services/storage';
 
 /**
  * Prefix cell values that could be interpreted as formulas (=, +, -, @)
