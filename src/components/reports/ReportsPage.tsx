@@ -12,6 +12,7 @@ import {
   PieChart as PieIcon,
   AlertTriangle,
   FileSpreadsheet,
+  FileCheck,
 } from 'lucide-react';
 import {
   BarChart,
@@ -29,10 +30,11 @@ import {
 import { useApp } from '../../context/AppContext';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { exportToCsvFile } from '../../utils/storage';
+import { Gstr1ReportTab } from './Gstr1ReportTab';
 
 export const ReportsPage: React.FC = () => {
   const { sales, payments, products, customers, stockMovements, currentUser } = useApp();
-  const [activeReportTab, setActiveReportTab] = useState<'sales' | 'payments' | 'inventory' | 'profit'>('profit');
+  const [activeReportTab, setActiveReportTab] = useState<'sales' | 'payments' | 'inventory' | 'profit' | 'gstr1'>('profit');
   const [period, setPeriod] = useState<'month' | 'fy' | 'all'>('month');
 
   // Completed valid sales
@@ -226,6 +228,18 @@ export const ReportsPage: React.FC = () => {
           >
             <Package className="w-4 h-4" />
             <span>Inventory Valuation</span>
+          </button>
+
+          <button
+            onClick={() => setActiveReportTab('gstr1')}
+            className={`pb-3 text-xs font-bold border-b-2 flex items-center space-x-1.5 transition-all ${
+              activeReportTab === 'gstr1'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <FileCheck className="w-4 h-4" />
+            <span>GSTR-1 Report</span>
           </button>
         </div>
       </div>
@@ -497,6 +511,11 @@ export const ReportsPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ---------------------------------------------------- */}
+      {/* REPORT 5: GSTR-1 TAX REPORT                          */}
+      {/* ---------------------------------------------------- */}
+      {activeReportTab === 'gstr1' && <Gstr1ReportTab />}
     </div>
   );
 };
