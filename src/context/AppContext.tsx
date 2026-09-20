@@ -25,6 +25,19 @@ import { loadStateFromStorage, saveStateToStorage } from '../utils/storage';
 import { calculateSaleTotals } from '../utils/calculations';
 import { generateId } from '../utils/id';
 import { setCurrencySymbol } from '../utils/formatters';
+import { isSupabaseConfigured } from '../services/supabaseClient';
+import {
+  CloudSession,
+  SyncStatus,
+  cloudSignIn,
+  cloudSignUp,
+  cloudSignOut,
+  restoreCloudSession,
+  pullCloudState,
+  pushEntities,
+  buildSnapshot,
+  detectChangedKeys,
+} from '../services/sync/cloudSync';
 
 interface AppContextType extends AppState {
   // Sale & Invoice Actions
@@ -85,6 +98,17 @@ interface AppContextType extends AppState {
   isAuthenticated: boolean;
   login: (identifier: string, password?: string) => { success: boolean; error?: string };
   logout: () => void;
+
+  // Cloud sync (Supabase) — owner account login + background entity sync
+  cloudSession: CloudSession | null;
+  isCloudMode: boolean;
+  syncStatus: SyncStatus;
+  lastSyncedAt: string | null;
+  cloudError: string | null;
+  cloudLogin: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  cloudSignup: (email: string, password: string, ownerName: string) => Promise<{ success: boolean; error?: string }>;
+  syncNow: () => Promise<void>;
+  pullFromCloud: () => Promise<void>;
   addUser: (userData: Omit<User, 'id' | 'createdAt'>) => User;
   updateUser: (id: string, userData: Partial<User>) => void;
   deleteUser: (id: string) => boolean;
@@ -169,6 +193,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return localStorage.getItem('zentra_auth') === 'true';
   });
 
+  // ----------------------------------------------------
+  // CLOUD SYNC STATE (Supabase)
+  // ----------------------------------------------------
+  const [cloudSession, setCloudSession] = useState<CloudSession | null>(() => {
+    try {
+      const raw = localStorage.getItem('zentra_cloud_session');
+      return raw ? (JSON.parse(raw) as CloudSession) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('offline');
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [cloudError, setCloudError] = useState<string | null>(null);
+  // Entity references at the time of the last successful cloud sync
+  const syncSnapshotRef = useRef<Partial<AppState>>({});
+  const pushTimerRef = useRef<number | null>(null);
+  const pushBusyRef = useRef(false);
+  const isCloudMode = Boolean(isSupabaseConfigured && cloudSession);
+
   // Sync currency symbol whenever business profile changes
   useEffect(() => {
     setCurrencySymbol(state.business.currencySymbol || '₹');
@@ -190,6 +234,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     window.addEventListener('storage-quota-exceeded', handler);
     return () => window.removeEventListener('storage-quota-exceeded', handler);
   }, []);
+
+  // Restore a previous cloud session silently on load (background pull)
+  useEffect(() => {
+    if (!isSupabaseConfigured || !cloudSession || !isAuthenticated) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        setSyncStatus('syncing');
+        const restored = await restoreCloudSession(cloudSession.ownerEmail);
+        if (!restored) {
+          if (!cancelled) setSyncStatus('offline');
+          return;
+        }
+        const pulled = await pullCloudState(restored.businessId);
+        if (cancelled) return;
+        applyPulledState(pulled, restored.ownerEmail);
+        setSyncStatus('connected');
+        setLastSyncedAt(new Date().toISOString());
+        setCloudError(null);
+      } catch (e) {
+        if (!cancelled) {
+          setSyncStatus('error');
+          setCloudError(e instanceof Error ? e.message : String(e));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Debounced cloud push: upload only the entities whose array/object changed
+  useEffect(() => {
+    if (!isSupabaseConfigured || !cloudSession || !isAuthenticated) return;
+    const changed = detectChangedKeys(state, syncSnapshotRef.current);
+    if (changed.length === 0) return;
+    if (pushTimerRef.current) window.clearTimeout(pushTimerRef.current);
+    pushTimerRef.current = window.setTimeout(() => {
+      pushTimerRef.current = null;
+      void runPush();
+    }, 2500);
+    return () => {
+      if (pushTimerRef.current) {
+        window.clearTimeout(pushTimerRef.current);
+        pushTimerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, cloudSession, isAuthenticated]);
 
   // ----------------------------------------------------
   // AUTH (Fixed: require non-empty password)
@@ -233,8 +327,131 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logout = () => {
+    if (cloudSession) {
+      void cloudSignOut();
+      localStorage.removeItem('zentra_cloud_session');
+      setCloudSession(null);
+      setSyncStatus('offline');
+      setLastSyncedAt(null);
+    }
     setIsAuthenticated(false);
     localStorage.removeItem('zentra_auth');
+  };
+
+  // ----------------------------------------------------
+  // CLOUD SYNC — login, signup, pull, diff push
+  // ----------------------------------------------------
+  /** Merge pulled cloud data into app state (and remember the synced snapshot). */
+  const applyPulledState = (pulled: Partial<AppState>, ownerEmail: string) => {
+    const merged = { ...stateRef.current, ...pulled } as AppState;
+    const users = merged.users || [];
+    const ownerUser =
+      users.find((u) => u.email.toLowerCase() === ownerEmail.toLowerCase()) ||
+      users.find((u) => u.role.toLowerCase().includes('admin')) ||
+      users[0] ||
+      merged.currentUser;
+    merged.currentUser = ownerUser;
+    syncSnapshotRef.current = buildSnapshot(merged);
+    setState(merged);
+  };
+
+  const cloudLogin = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    if (!isSupabaseConfigured) {
+      return { success: false, error: 'Cloud sync is not configured on this device (missing .env).' };
+    }
+    try {
+      setSyncStatus('syncing');
+      const cleanEmail = email.trim();
+      const businessId = await cloudSignIn(cleanEmail, password);
+      const pulled = await pullCloudState(businessId);
+      applyPulledState(pulled, cleanEmail);
+      const session: CloudSession = { businessId, ownerEmail: cleanEmail.toLowerCase() };
+      setCloudSession(session);
+      localStorage.setItem('zentra_cloud_session', JSON.stringify(session));
+      setIsAuthenticated(true);
+      localStorage.setItem('zentra_auth', 'true');
+      setSyncStatus('connected');
+      setLastSyncedAt(new Date().toISOString());
+      setCloudError(null);
+      return { success: true };
+    } catch (e) {
+      setSyncStatus('error');
+      const msg = e instanceof Error ? e.message : String(e);
+      setCloudError(msg);
+      return { success: false, error: msg };
+    }
+  };
+
+  /** Create the owner cloud account and upload this device's data. */
+  const cloudSignup = async (email: string, password: string, ownerName: string): Promise<{ success: boolean; error?: string }> => {
+    if (!isSupabaseConfigured) {
+      return { success: false, error: 'Cloud sync is not configured on this device (missing .env).' };
+    }
+    try {
+      setSyncStatus('syncing');
+      const cleanEmail = email.trim();
+      const session = await cloudSignUp(cleanEmail, password, ownerName.trim(), stateRef.current);
+      const pulled = await pullCloudState(session.businessId);
+      applyPulledState(pulled, cleanEmail);
+      setCloudSession(session);
+      localStorage.setItem('zentra_cloud_session', JSON.stringify(session));
+      setIsAuthenticated(true);
+      localStorage.setItem('zentra_auth', 'true');
+      setSyncStatus('connected');
+      setLastSyncedAt(new Date().toISOString());
+      setCloudError(null);
+      return { success: true };
+    } catch (e) {
+      setSyncStatus('error');
+      let msg = e instanceof Error ? e.message : String(e);
+      if (msg === 'EMAIL_CONFIRMATION_REQUIRED') {
+        msg = 'Check your inbox and confirm your email first, then sign in here.';
+      }
+      setCloudError(msg);
+      return { success: false, error: msg };
+    }
+  };
+
+  /** Push whatever changed since the last successful sync. */
+  const runPush = async (): Promise<void> => {
+    if (!isSupabaseConfigured || !cloudSession || pushBusyRef.current) return;
+    pushBusyRef.current = true;
+    setSyncStatus('syncing');
+    try {
+      const stateAtPush = stateRef.current;
+      const changed = detectChangedKeys(stateAtPush, syncSnapshotRef.current);
+      if (changed.length > 0) {
+        await pushEntities(stateAtPush, changed, syncSnapshotRef.current, cloudSession.businessId);
+        syncSnapshotRef.current = buildSnapshot(stateAtPush);
+      }
+      setSyncStatus('connected');
+      setLastSyncedAt(new Date().toISOString());
+      setCloudError(null);
+    } catch (e) {
+      setSyncStatus('error');
+      const msg = e instanceof Error ? e.message : String(e);
+      setCloudError(msg);
+      toast.error('Cloud sync failed — your changes are safe on this device and will retry.');
+    } finally {
+      pushBusyRef.current = false;
+    }
+  };
+
+  /** Manual full pull (download cloud data over local data). */
+  const pullFromCloud = async (): Promise<void> => {
+    if (!cloudSession) return;
+    setSyncStatus('syncing');
+    try {
+      const pulled = await pullCloudState(cloudSession.businessId);
+      applyPulledState(pulled, cloudSession.ownerEmail);
+      setSyncStatus('connected');
+      setLastSyncedAt(new Date().toISOString());
+      setCloudError(null);
+    } catch (e) {
+      setSyncStatus('error');
+      const msg = e instanceof Error ? e.message : String(e);
+      setCloudError(msg);
+    }
   };
 
   const addAuditLog = (
@@ -1477,6 +1694,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isAuthenticated,
         login,
         logout,
+        cloudSession,
+        isCloudMode,
+        syncStatus,
+        lastSyncedAt,
+        cloudError,
+        cloudLogin,
+        cloudSignup,
+        syncNow: runPush,
+        pullFromCloud,
         createSale,
         cancelSale,
         deleteSale,
