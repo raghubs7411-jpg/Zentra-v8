@@ -451,7 +451,7 @@ export const initialCustomers: Customer[] = [
   },
   {
     id: 'cust-3',
- name: 'Ananya Deshmukh (Creative Interiors)',
+    name: 'Ananya Deshmukh (Creative Interiors)',
     phone: '9900344556',
     email: 'ananya.design@gmail.com',
     address: 'Flat 304, Green Glen Layout, Bellandur',
