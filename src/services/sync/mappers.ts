@@ -260,7 +260,7 @@ export const customerFromDb = (row: DbRow): Customer => ({
   openingBalance: num(row.opening_balance),
   notes: row.notes ?? undefined,
   createdAt: iso(row.created_at),
-  updatedAt: iso(row.updatedAt),
+  updatedAt: iso(row.updated_at),
 });
 
 // ============================================================
