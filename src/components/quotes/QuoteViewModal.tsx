@@ -36,7 +36,7 @@ const STATUS_STYLES: Record<string, string> = {
 export const QuoteViewModal: React.FC<QuoteViewModalProps> = ({ quoteId, isOpen, onClose, onEdit, onConvert }) => {
   const { quotes, business, updateQuote, deleteQuote } = useApp();
   const confirmDialog = useConfirm();
-  const [busy] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   if (!isOpen || !quoteId) return null;
 
