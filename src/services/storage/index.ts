@@ -11,6 +11,7 @@ import { loadPayments, savePayments } from './payments';
 import { loadPurchases, savePurchases } from './purchases';
 import { loadStockMovements, saveStockMovements } from './stockMovements';
 import { loadSalesReturns, saveSalesReturns } from './salesReturns';
+import { loadQuotes, saveQuotes } from './quotes';
 import { loadPriceHistories, savePriceHistories } from './priceHistories';
 import { loadAuditLogs, saveAuditLogs } from './auditLogs';
 import { loadRoles, saveRoles } from './roles';
@@ -40,6 +41,7 @@ export const saveAppState = (state: AppState): void => {
   savePurchases(state.purchases ?? []);
   saveStockMovements(state.stockMovements ?? []);
   saveSalesReturns(state.salesReturns ?? []);
+  saveQuotes(state.quotes ?? []);
   savePriceHistories(state.priceHistories ?? []);
   saveAuditLogs(state.auditLogs ?? []);
   saveRoles(state.roles ?? []);
@@ -83,6 +85,7 @@ export const loadAppState = (): AppState | null => {
     purchases: loadPurchases() ?? legacy?.purchases ?? [],
     stockMovements: loadStockMovements() ?? legacy?.stockMovements ?? [],
     salesReturns: loadSalesReturns() ?? legacy?.salesReturns ?? [],
+    quotes: loadQuotes() ?? legacy?.quotes ?? [],
     priceHistories: loadPriceHistories() ?? legacy?.priceHistories ?? [],
     auditLogs: loadAuditLogs() ?? legacy?.auditLogs ?? [],
     roles: loadRoles() ?? legacy?.roles ?? seed.roles,

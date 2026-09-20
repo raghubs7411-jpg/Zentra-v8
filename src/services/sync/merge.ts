@@ -29,6 +29,7 @@ const ARRAY_KEYS = [
   'purchases',
   'stockMovements',
   'salesReturns',
+  'quotes',
   'priceHistories',
   'auditLogs',
   'deliveryChallans',

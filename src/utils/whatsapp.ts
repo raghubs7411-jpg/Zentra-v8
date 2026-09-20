@@ -1,4 +1,4 @@
-import { BusinessProfile, Invoice } from '../types';
+import { BusinessProfile, Invoice, Quote } from '../types';
 import { formatCurrency, formatDate } from './formatters';
 
 export const cleanPhoneForWhatsApp = (phone: string): string => {
@@ -37,6 +37,40 @@ ${itemsSummary}
 ---------------------------------
 
 ${invoice.balanceDue > 0 ? `*Payment UPI:* ${business.bankDetails.upiId}\n*Bank:* ${business.bankDetails.bankName} (A/C: ${business.bankDetails.accountNo}, IFSC: ${business.bankDetails.ifscCode})\n` : ''}
+Thank you for your business! 🙏
+_${business.name} | Ph: ${business.phone}_`;
+
+  return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
+};
+
+export const generateQuoteWhatsAppUrl = (
+  phone: string,
+  business: BusinessProfile,
+  quote: Quote
+): string => {
+  const cleanPhone = cleanPhoneForWhatsApp(phone);
+  const itemsSummary = quote.items
+    .map(
+      (item, idx) =>
+        `${idx + 1}. *${item.productName}* (${item.quantity} ${item.unit}) - ${formatCurrency(item.totalAmount)}`
+    )
+    .join('\n');
+
+  const text = `*Quotation from ${business.name}*
+📄 *Quote No:* ${quote.quoteNumber}
+📅 *Date:* ${formatDate(quote.date)}
+⏳ *Valid Until:* ${formatDate(quote.validUntil)}
+👤 *Customer:* ${quote.customerName}
+
+*Items Quoted:*
+${itemsSummary}
+
+---------------------------------
+*Quoted Total (incl. GST):* ${formatCurrency(quote.grandTotal)}
+---------------------------------
+
+This is a rate quotation, not a tax invoice. Please reply to confirm your order.
+
 Thank you for your business! 🙏
 _${business.name} | Ph: ${business.phone}_`;
 

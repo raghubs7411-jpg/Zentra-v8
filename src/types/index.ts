@@ -60,6 +60,7 @@ export interface BusinessProfile {
   nextPaymentNumber: number;
   nextPurchaseNumber: number;
   nextReturnNumber: number;
+  nextQuoteNumber?: number;
   invoiceTerms: string;
   currencySymbol: string;
   enableGst: boolean;
@@ -298,10 +299,58 @@ export interface SalesReturn {
   createdAt: string;
 }
 
+// ============================================================
+// QUOTATIONS (Estimate / rate quote — never touches stock or khata)
+// ============================================================
+
+export type QuoteStatus = 'Draft' | 'Sent' | 'Accepted' | 'Rejected' | 'Expired' | 'Converted';
+
+export interface QuoteItem {
+  id: string;
+  productId: string;
+  productName: string;
+  sku: string;
+  unit: UnitType;
+  quantity: number;
+  purchasePrice: number; // For margin preview when converting to a sale
+  unitPrice: number;
+  discount: number;
+  discountType: 'percentage' | 'fixed';
+  gstRate: number;
+  taxAmount: number;
+  totalAmount: number;
+}
+
+export interface Quote {
+  id: string;
+  quoteNumber: string;
+  customerId: string;
+  customerName: string;
+  customerPhone: string;
+  customerAddress?: string;
+  customerGstin?: string;
+  date: string;
+  validUntil: string;
+  items: QuoteItem[];
+  subtotal: number;
+  totalDiscount: number;
+  totalTax: number;
+  roundOff: number;
+  grandTotal: number;
+  status: QuoteStatus;
+  isZeroGst?: boolean;
+  isInterState?: boolean;
+  notes?: string;
+  convertedSaleId?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AuditLog {
   id: string;
   action: string;
-  entityType: 'Product' | 'Sale' | 'Invoice' | 'Payment' | 'Customer' | 'Price' | 'Inventory' | 'Purchase' | 'Settings' | 'User' | 'Role';
+  entityType: 'Product' | 'Sale' | 'Invoice' | 'Payment' | 'Customer' | 'Price' | 'Inventory' | 'Purchase' | 'Settings' | 'User' | 'Role' | 'Quote';
   entityId: string;
   details: string;
   performedBy: string;
@@ -318,6 +367,7 @@ export interface AppState {
   purchases: Purchase[];
   stockMovements: StockMovement[];
   salesReturns: SalesReturn[];
+  quotes?: Quote[];
   priceHistories: PriceHistory[];
   auditLogs: AuditLog[];
   roles: RolePermission[];
