@@ -14,7 +14,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from '../supabaseClient';
-import { AppState, BusinessProfile, DeliveryChallan, Purchase, Sale, SalesReturn, User } from '../../types';
+import { AppState, BusinessProfile, DeliveryChallan, Purchase, Quote, Sale, SalesReturn, User } from '../../types';
 import * as M from './mappers';
 
 export interface CloudSession {
@@ -34,6 +34,7 @@ export type SyncKey =
   | 'purchases'
   | 'stockMovements'
   | 'salesReturns'
+  | 'quotes'
   | 'priceHistories'
   | 'auditLogs'
   | 'roles'
@@ -53,6 +54,7 @@ export const ALL_SYNC_KEYS: SyncKey[] = [
   'purchases',
   'stockMovements',
   'salesReturns',
+  'quotes',
   'priceHistories',
   'auditLogs',
   'deliveryChallans',
@@ -74,6 +76,7 @@ export const buildSnapshot = (state: AppState): Partial<AppState> => ({
   purchases: state.purchases,
   stockMovements: state.stockMovements,
   salesReturns: state.salesReturns,
+  quotes: state.quotes,
   priceHistories: state.priceHistories,
   auditLogs: state.auditLogs,
   roles: state.roles,
@@ -244,6 +247,7 @@ export async function pullCloudState(businessId: string): Promise<Partial<AppSta
   const purchasesRes = await supabase.from('purchases').select('*, purchase_items(*)').eq('business_id', businessId);
   const returnsRes = await supabase.from('sales_returns').select('*, sales_return_items(*)').eq('business_id', businessId);
   const challansRes = await supabase.from('delivery_challans').select('*, delivery_challan_items(*)').eq('business_id', businessId);
+  const quotesRes = await supabase.from('quotations').select('*, quotation_items(*)').eq('business_id', businessId);
 
   const err = (e: unknown, what: string): never => {
     throw new Error(`Downloading ${what} failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -253,6 +257,7 @@ export async function pullCloudState(businessId: string): Promise<Partial<AppSta
   if (purchasesRes.error) err(purchasesRes.error, 'purchases');
   if (returnsRes.error) err(returnsRes.error, 'sales returns');
   if (challansRes.error) err(challansRes.error, 'delivery challans');
+  if (quotesRes.error) err(quotesRes.error, 'quotations');
   if (businesses.error) err(businesses.error, 'business profile');
   for (const [res, what] of [
     [customers, 'customers'],
@@ -299,6 +304,9 @@ export async function pullCloudState(businessId: string): Promise<Partial<AppSta
     auditLogs: (auditLogs.data || []).map(M.auditLogFromDb),
     deliveryChallans: (challansRes.data || []).map((row: M.DbRow) =>
       M.challanFromDb(row, (row.delivery_challan_items as M.DbRow[]) || [])
+    ),
+    quotes: (quotesRes.data || []).map((row: M.DbRow) =>
+      M.quoteFromDb(row, (row.quotation_items as M.DbRow[]) || [])
     ),
     notifications: (notifications.data || []).map(M.notificationFromDb),
   };
@@ -347,6 +355,7 @@ export async function pushEntities(
   // ---------- 1. Deletions first (children cascade via FK) ----------
   const DEL_ORDER: SyncKey[] = [
     'notifications',
+    'quotes',
     'deliveryChallans',
     'auditLogs',
     'priceHistories',
@@ -363,6 +372,7 @@ export async function pushEntities(
   ];
   const DEL_TABLE: Partial<Record<SyncKey, string>> = {
     notifications: 'notifications',
+    quotes: 'quotations',
     deliveryChallans: 'delivery_challans',
     auditLogs: 'audit_logs',
     priceHistories: 'price_histories',
@@ -432,6 +442,14 @@ export async function pushEntities(
     await deleteRowsByColumn('sales_return_items', 'sales_return_id', changed.map((r) => r.id));
     const allItems = changed.flatMap((r) => r.items.map((it) => M.salesReturnItemToDb(it, r.id)));
     await upsertRows('sales_return_items', allItems);
+  }
+  if (wants('quotes') && state.quotes) {
+    const changed = changedParents<Quote>(state, 'quotes');
+    await upsertRows('quotations', changed.map((q) => M.quoteToDb(q, businessId)));
+    // Replace child rows for changed quotes (delete + insert beats per-row diffing)
+    await deleteRowsByColumn('quotation_items', 'quote_id', changed.map((q) => q.id));
+    const allQuoteItems = changed.flatMap((q) => q.items.map((it) => M.quoteItemToDb(it, q.id)));
+    await upsertRows('quotation_items', allQuoteItems);
   }
   if (wants('priceHistories')) {
     await upsertRows('price_histories', state.priceHistories.map((h) => M.priceHistoryToDb(h, businessId)));

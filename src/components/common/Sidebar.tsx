@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   ShoppingCart,
   Receipt,
+  FileText,
   Users,
   Package,
   CreditCard,
@@ -34,14 +35,16 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab }) => {
-  const { business, getLowStockProducts, sales, currentUser, hasModuleAccess, logout } = useApp();
+  const { business, getLowStockProducts, sales, quotes, currentUser, hasModuleAccess, logout } = useApp();
   const lowStockCount = getLowStockProducts().length;
   const pendingSalesCount = sales.filter((s) => s.paymentStatus === 'Pending').length;
+  const openQuotesCount = (quotes ?? []).filter((q) => q.status === 'Sent' || q.status === 'Draft').length;
 
   const allTabs: TabItem[] = [
     { id: 'overview', name: 'Overview', icon: LayoutDashboard },
     { id: 'new-sale', name: 'New Sale (POS)', icon: ShoppingCart, badge: 'Fast', badgeColor: 'bg-emerald-500' },
     { id: 'sales', name: 'Sales', icon: Receipt, badge: pendingSalesCount > 0 ? pendingSalesCount : undefined, badgeColor: 'bg-amber-500' },
+    { id: 'quotes', name: 'Quotations', icon: FileText, badge: openQuotesCount > 0 ? openQuotesCount : undefined, badgeColor: 'bg-indigo-500' },
     { id: 'customers', name: 'Customers CRM', icon: Users },
     { id: 'inventory', name: 'Products / Stock', icon: Package, badge: lowStockCount > 0 ? lowStockCount : undefined, badgeColor: 'bg-rose-500' },
     { id: 'purchases', name: 'Stock-In / Purchase', icon: Truck },

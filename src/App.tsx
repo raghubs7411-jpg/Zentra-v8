@@ -9,6 +9,7 @@ import { LoginPage } from './components/auth/LoginPage';
 import { OverviewTab } from './components/dashboard/OverviewTab';
 import { NewSalePage } from './components/pos/NewSalePage';
 import { SalesListPage } from './components/sales/SalesListPage';
+import { QuotationsPage } from './components/quotes/QuotationsPage';
 import { CustomersListPage } from './components/customers/CustomersListPage';
 import { InventoryListPage } from './components/inventory/InventoryListPage';
 import { PurchasesListPage } from './components/purchases/PurchasesListPage';
@@ -80,6 +81,7 @@ const AppContent: React.FC = () => {
         'overview',
         'new-sale',
         'sales',
+        'quotes',
         'customers',
         'inventory',
         'payments',
@@ -165,6 +167,12 @@ const AppContent: React.FC = () => {
               onRecordPayment={(cId, iId) => handleOpenRecordPayment(cId, iId)}
               onOpenSalesReturn={(id) => setActiveReturnSaleId(id)}
               onOpenCancelSale={(id) => setActiveCancelSaleId(id)}
+            />
+          )}
+
+          {activeTab === 'quotes' && (
+            <QuotationsPage
+              onViewInvoice={(invoiceId) => setActiveInvoiceId(invoiceId)}
             />
           )}
 
