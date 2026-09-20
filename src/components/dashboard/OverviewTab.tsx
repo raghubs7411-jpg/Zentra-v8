@@ -30,6 +30,7 @@ import {
   Pie,
   Cell,
   Legend,
+  Label,
 } from 'recharts';
 import { useApp } from '../../context/AppContext';
 import { formatCurrency, formatDate } from '../../utils/formatters';
@@ -413,7 +414,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false}>
-                  <label value="Date" position="insideBottom" offset={-2} style={{ fontSize: 11, fill: '#94a3b8', fontWeight: 600 }} />
+                  <Label value="Date" position="insideBottom" offset={-2} style={{ fontSize: 11, fill: '#94a3b8', fontWeight: 600 }} />
                 </XAxis>
                 <YAxis
                   tick={{ fontSize: 11, fill: '#64748b' }}
