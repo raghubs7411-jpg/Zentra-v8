@@ -1,0 +1,37 @@
+name: Apply patch
+
+on:
+  push:
+    paths:
+      - 'patch_to_apply/*.patch'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply patches
+        run: |
+          shopt -s nullglob
+          for p in patch_to_apply/*.patch; do
+            echo "Applying $p"
+            git apply --verbose "$p"
+          done
+
+      - name: Commit result
+        run: |
+          git config user.name "patch-bot"
+          git config user.email "action@github.com"
+          git add -A
+          git rm -r -q patch_to_apply 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: apply patch file(s) [patch-bot]"
+            git push
+          fi
