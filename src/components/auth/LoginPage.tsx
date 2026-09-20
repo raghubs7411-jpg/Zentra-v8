@@ -1,17 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Lock,
   User,
   KeyRound,
   ArrowRight,
+  ArrowLeft,
   AlertCircle,
   Cloud,
   CloudUpload,
   Loader2,
   ChevronDown,
+  Mail,
+  ShieldCheck,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { isSupabaseConfigured } from '../../services/supabaseClient';
+import { isSupabaseConfigured, supabase } from '../../services/supabaseClient';
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
@@ -20,7 +23,7 @@ interface LoginPageProps {
 const IS_DEV_MODE = import.meta.env.DEV;
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
-  const { users, login, business, cloudLogin, cloudSignup } = useApp();
+  const { users, login, business, cloudLogin, cloudSignup, cloudSendPasswordReset, cloudCompletePasswordReset } = useApp();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +35,25 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [isSignupMode, setIsSignupMode] = useState(false);
   const [cloudBusy, setCloudBusy] = useState(false);
   const [cloudModeError, setCloudModeError] = useState<string | null>(null);
+  const [cloudNotice, setCloudNotice] = useState<string | null>(null);
+
+  // Forgot password / password recovery
+  const [showForgot, setShowForgot] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [resetBusy, setResetBusy] = useState(false);
+
+  // The reset email lands back on the app; the Supabase client picks up the
+  // recovery token and fires PASSWORD_RECOVERY — show the new-password form.
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,6 +96,45 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       onLoginSuccess();
     } else {
       setCloudModeError(result.error || 'Cloud sign-in failed.');
+    }
+  };
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCloudModeError(null);
+    setCloudNotice(null);
+    if (!resetEmail.trim()) {
+      setCloudModeError('Please enter the email you signed up with.');
+      return;
+    }
+    setResetBusy(true);
+    const result = await cloudSendPasswordReset(resetEmail.trim());
+    setResetBusy(false);
+    if (result.success) {
+      setCloudNotice('Password reset link sent \u2014 check your inbox (and spam folder).');
+    } else {
+      setCloudModeError(result.error || 'Could not send the reset email.');
+    }
+  };
+
+  const handleNewPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCloudModeError(null);
+    if (newPassword.length < 6) {
+      setCloudModeError('Password must be at least 6 characters.');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setCloudModeError('Passwords do not match.');
+      return;
+    }
+    setResetBusy(true);
+    const result = await cloudCompletePasswordReset(newPassword);
+    setResetBusy(false);
+    if (result.success) {
+      onLoginSuccess();
+    } else {
+      setCloudModeError(result.error || 'Could not set the new password.');
     }
   };
 
@@ -132,6 +193,95 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               </div>
             )}
 
+            {/* Notice Banner */}
+            {cloudNotice && !recoveryMode && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start space-x-2 text-emerald-700 text-xs">
+                <Mail className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                <span>{cloudNotice}</span>
+              </div>
+            )}
+
+            {recoveryMode && (
+              <form onSubmit={handleNewPasswordSubmit} className="space-y-5">
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  You opened the password reset link. Choose a new password for your cloud account below.
+                </p>
+                <div>
+                  <label className="block font-semibold text-slate-600 mb-2 text-xs uppercase tracking-wider">
+                    New Password
+                  </label>
+                  <div className="relative">
+                    <KeyRound className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2 z-10 pointer-events-none" />
+                    <input
+                      type="password"
+                      required
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Minimum 6 characters"
+                      className="w-full h-12 pl-12 pr-4 text-sm text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl outline-none transition-all focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 font-mono"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-600 mb-2 text-xs uppercase tracking-wider">
+                    Confirm New Password
+                  </label>
+                  <div className="relative">
+                    <ShieldCheck className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2 z-10 pointer-events-none" />
+                    <input
+                      type="password"
+                      required
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      placeholder="Re-enter the new password"
+                      className="w-full h-12 pl-12 pr-4 text-sm text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl outline-none transition-all focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 font-mono"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={resetBusy}
+                  className="w-full h-12 flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-bold rounded-xl shadow-md hover:shadow-lg transition-all"
+                >
+                  {resetBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                  <span>Set New Password</span>
+                </button>
+              </form>
+            )}
+
+            {!recoveryMode && showForgot && (
+              <form onSubmit={handleForgotSubmit} className="space-y-5">
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Enter the email you used to create your cloud account and we will send a password reset link to it.
+                </p>
+                <div>
+                  <label className="block font-semibold text-slate-600 mb-2 text-xs uppercase tracking-wider">
+                    Email
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2 z-10 pointer-events-none" />
+                    <input
+                      type="email"
+                      required
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      placeholder="owner@business.com"
+                      className="w-full h-12 pl-12 pr-4 text-sm text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl outline-none transition-all focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={resetBusy}
+                  className="w-full h-12 flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-bold rounded-xl shadow-md hover:shadow-lg transition-all"
+                >
+                  {resetBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                  <span>Send Reset Link</span>
+                </button>
+              </form>
+            )}
+
+            {!recoveryMode && !showForgot && (
             <form onSubmit={handleCloudSubmit} className="space-y-5">
               {isSignupMode && (
                 <div>
@@ -201,17 +351,52 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 <span>{isSignupMode ? 'Create Account & Upload Data' : 'Sign In & Sync'}</span>
               </button>
             </form>
+            )}
 
-            <button
-              type="button"
-              onClick={() => {
-                setIsSignupMode(!isSignupMode);
-                setCloudModeError(null);
-              }}
-              className="w-full text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline"
-            >
-              {isSignupMode ? 'Already have an account? Sign in' : 'New here? Set up your cloud account'}
-            </button>
+            {showForgot && !recoveryMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowForgot(false);
+                  setCloudModeError(null);
+                  setCloudNotice(null);
+                }}
+                className="w-full text-xs font-semibold text-slate-500 hover:text-slate-700 hover:underline"
+              >
+                <span className="inline-flex items-center space-x-1">
+                  <ArrowLeft className="w-3 h-3" />
+                  <span>Back to sign in</span>
+                </span>
+              </button>
+            )}
+
+            {!recoveryMode && !showForgot && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSignupMode(!isSignupMode);
+                  setCloudModeError(null);
+                }}
+                className="w-full text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline"
+              >
+                {isSignupMode ? 'Already have an account? Sign in' : 'New here? Set up your cloud account'}
+              </button>
+            )}
+
+            {!recoveryMode && !showForgot && !isSignupMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  setResetEmail(cloudEmail);
+                  setShowForgot(true);
+                  setCloudModeError(null);
+                  setCloudNotice(null);
+                }}
+                className="w-full text-xs font-semibold text-slate-400 hover:text-blue-600 hover:underline"
+              >
+                Forgot password?
+              </button>
+            )}
           </div>
         )}
 
