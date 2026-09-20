@@ -11,6 +11,9 @@ import {
   UserX,
   Zap,
   LogOut,
+  Cloud,
+  CloudOff,
+  Loader2,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { User } from '../../types';
@@ -21,12 +24,25 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ onOpenGlobalSearch, onNavigateTab }) => {
-  const { business, users, currentUser, setCurrentUser, getLowStockProducts, sales, logout } = useApp();
+  const { business, users, currentUser, setCurrentUser, getLowStockProducts, sales, logout, isCloudMode, syncStatus, lastSyncedAt, syncNow } = useApp();
   const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [showNotificationMenu, setShowNotificationMenu] = useState(false);
 
   const lowStockItems = getLowStockProducts();
   const pendingInvoices = sales.filter((s) => s.paymentStatus === 'Pending' || s.paymentStatus === 'Partially Paid');
+
+  const cloudLabel =
+    syncStatus === 'syncing' ? 'Syncing' :
+    syncStatus === 'error' ? 'Sync issue' :
+    syncStatus === 'offline' ? 'Cloud off' : 'Synced';
+  const cloudBtnClass =
+    syncStatus === 'connected'
+      ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+      : syncStatus === 'syncing'
+      ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
+      : syncStatus === 'error'
+      ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
+      : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100';
 
   const handleSelectUser = (user: User) => {
     setCurrentUser(user);
@@ -63,6 +79,28 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenGlobalSearch, onNavigateTa
 
       {/* Right: Actions, Notifications, Role & User Switcher */}
       <div className="flex items-center space-x-2 sm:space-x-3">
+        {/* Cloud Sync Status Pill */}
+        {isCloudMode && (
+          <button
+            onClick={() => void syncNow()}
+            title={
+              lastSyncedAt
+                ? 'Last synced ' + new Date(lastSyncedAt).toLocaleTimeString() + ' \u2014 click to sync now'
+                : 'Click to sync now'
+            }
+            className={'hidden sm:flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-xl border transition-colors ' + cloudBtnClass}
+          >
+            {syncStatus === 'syncing' ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : syncStatus === 'connected' ? (
+              <Cloud className="w-3.5 h-3.5" />
+            ) : (
+              <CloudOff className="w-3.5 h-3.5" />
+            )}
+            <span className="hidden lg:inline">{cloudLabel}</span>
+          </button>
+        )}
+
         {/* Mobile Search Button */}
         <button
           onClick={onOpenGlobalSearch}
