@@ -27,7 +27,7 @@ import {
   Truck,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { BusinessProfile, User, RolePermission } from '../../types';
+import { BusinessProfile, Customer, Payment, Product, Purchase, RolePermission, Sale, User } from '../../types';
 import { exportToJsonFile, exportToCsvFile } from '../../utils/storage';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
 import { toast } from 'sonner';
@@ -179,7 +179,7 @@ export const SettingsPage: React.FC = () => {
 
   const handleSaveUser = (e: React.FormEvent) => {
     e.preventDefault();
-    const matchedRole = roles.find((r) => r.id === userFormData.roleId || r.name === userFormData.role);
+    const matchedRole = roles.find((r: RolePermission) => r.id === userFormData.roleId || r.name === userFormData.role);
 
     if (userToEdit) {
       updateUser(userToEdit.id, {
@@ -277,7 +277,7 @@ export const SettingsPage: React.FC = () => {
   // CSV EXPORT HUB HANDLERS
   // ----------------------------------------------------
   const handleExportCustomersCsv = () => {
-    const data = customers.map((c) => ({
+    const data = customers.map((c: Customer) => ({
       ID: c.id,
       Name: c.name,
       Phone: c.phone,
@@ -298,7 +298,7 @@ export const SettingsPage: React.FC = () => {
   };
 
   const handleExportProductsCsv = () => {
-    const data = products.map((p) => ({
+    const data = products.map((p: Product) => ({
       ID: p.id,
       SKU: p.sku,
       Barcode: p.barcode || '',
@@ -318,7 +318,7 @@ export const SettingsPage: React.FC = () => {
   };
 
   const handleExportSalesCsv = () => {
-    const data = sales.map((s) => ({
+    const data = sales.map((s: Sale) => ({
       'Invoice #': s.invoiceNumber,
       Date: formatDate(s.date),
       Customer: s.customerName,
@@ -338,7 +338,7 @@ export const SettingsPage: React.FC = () => {
   };
 
   const handleExportPaymentsCsv = () => {
-    const data = payments.map((p) => ({
+    const data = payments.map((p: Payment) => ({
       'Receipt #': p.paymentNumber,
       Date: formatDate(p.paymentDate),
       'Invoice #': p.invoiceNumber || 'General Khata',
@@ -354,7 +354,7 @@ export const SettingsPage: React.FC = () => {
   };
 
   const handleExportPurchasesCsv = () => {
-    const data = purchases.map((p) => ({
+    const data = purchases.map((p: Purchase) => ({
       'Purchase #': p.purchaseNumber,
       'Vendor Inv #': p.vendorInvoiceNo,
       Date: formatDate(p.date),
@@ -580,7 +580,7 @@ export const SettingsPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {users.map((u) => {
+                    {users.map((u: User) => {
                       const isActive = u.status === 'Active';
                       const isMe = u.id === currentUser.id;
 
@@ -682,7 +682,7 @@ export const SettingsPage: React.FC = () => {
           {userRoleSubTab === 'roles' && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {roles.map((r) => (
+                {roles.map((r: RolePermission) => (
                   <div
                     key={r.id}
                     className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between space-y-4"
@@ -709,7 +709,7 @@ export const SettingsPage: React.FC = () => {
                           Accessible Modules ({r.accessibleModules.length}/12)
                         </span>
                         <div className="flex flex-wrap gap-1">
-                          {r.accessibleModules.map((modId) => (
+                          {r.accessibleModules.map((modId: string) => (
                             <span
                               key={modId}
                               className="text-[10px] bg-blue-50 text-blue-700 font-medium px-2 py-0.5 rounded-md"
@@ -1386,7 +1386,7 @@ export const SettingsPage: React.FC = () => {
                   <select
                     value={userFormData.roleId}
                     onChange={(e) => {
-                      const sel = roles.find((r) => r.id === e.target.value);
+                      const sel = roles.find((r: RolePermission) => r.id === e.target.value);
                       setUserFormData({
                         ...userFormData,
                         roleId: e.target.value,
@@ -1395,7 +1395,7 @@ export const SettingsPage: React.FC = () => {
                     }}
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-500 focus:outline-hidden font-bold"
                   >
-                    {roles.map((r) => (
+                    {roles.map((r: RolePermission) => (
                       <option key={r.id} value={r.id}>
                         {r.name}
                       </option>
