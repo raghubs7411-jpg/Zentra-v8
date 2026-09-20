@@ -12,6 +12,8 @@ import {
   StockMovement,
   SalesReturn,
   PriceHistory,
+  Quote,
+  QuoteItem,
   AuditLog,
   User,
   RolePermission,
@@ -67,6 +69,22 @@ interface AppContextType extends AppState {
     refundMethod: 'Cash' | 'Credit Note' | 'Bank Transfer' | 'Adjust Balance';
     reason: string;
   }) => SalesReturn | null;
+
+  // Quotation Actions (non-posting rate quotes)
+  createQuote: (params: {
+    customerId: string;
+    items: QuoteItem[];
+    validUntil: string;
+    notes?: string;
+    status?: 'Draft' | 'Sent';
+    isZeroGst?: boolean;
+  }) => Quote;
+  updateQuote: (id: string, quoteData: Partial<Quote>) => void;
+  deleteQuote: (id: string) => boolean;
+  convertQuoteToSale: (
+    quoteId: string,
+    params: { amountPaid: number; paymentMethod: PaymentMethod }
+  ) => { sale: Sale; invoice: Invoice } | null;
 
   // Customer Actions
   addCustomer: (customerData: Omit<Customer, 'id' | 'totalPurchases' | 'totalPaid' | 'outstandingBalance' | 'createdAt' | 'updatedAt'>) => Customer;
@@ -159,6 +177,7 @@ const migrateBusinessProfile = (biz: BusinessProfile): BusinessProfile => ({
   nextPaymentNumber: biz.nextPaymentNumber ?? 1,
   nextPurchaseNumber: biz.nextPurchaseNumber ?? 1,
   nextReturnNumber: biz.nextReturnNumber ?? 1,
+  nextQuoteNumber: biz.nextQuoteNumber ?? 1,
   businessStateCode: biz.businessStateCode ?? biz.gstin?.substring(0, 2) ?? '27',
 });
 
@@ -176,6 +195,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         canDeleteSales: r.canDeleteSales ?? false,
         canModifyStock: r.canModifyStock ?? false,
       }));
+      // Give any role that already has Sales access the new Quotations module
+      saved.roles = saved.roles.map((r) =>
+        r.accessibleModules.includes('quotes') || !r.accessibleModules.includes('sales')
+          ? r
+          : { ...r, accessibleModules: [...r.accessibleModules, 'quotes'] }
+      );
       // Give admin all new permissions
       const adminRole = saved.roles.find((r) => r.id === 'role-admin' || r.name.toLowerCase().includes('admin'));
       if (adminRole) {
@@ -1099,6 +1124,142 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // ----------------------------------------------------
+  // 3b. QUOTATIONS (non-posting rate quotes — never touch stock or khata)
+  // ----------------------------------------------------
+  const createQuote = (params: {
+    customerId: string;
+    items: QuoteItem[];
+    validUntil: string;
+    notes?: string;
+    status?: 'Draft' | 'Sent';
+    isZeroGst?: boolean;
+  }): Quote => {
+    const customer = stateRef.current.customers.find((c) => c.id === params.customerId);
+    if (!customer) throw new Error('Customer not found');
+
+    const isInterState = detectInterState(customer);
+    const totals = calculateSaleTotals(params.items, isInterState);
+    const quoteId = generateId('quote');
+    const quoteNum = `QTN-${new Date().getFullYear()}-${String(stateRef.current.business.nextQuoteNumber ?? 1).padStart(3, '0')}`;
+    const nowIso = new Date().toISOString();
+
+    const newQuote: Quote = {
+      id: quoteId,
+      quoteNumber: quoteNum,
+      customerId: customer.id,
+      customerName: customer.name,
+      customerPhone: customer.phone,
+      customerAddress: customer.address ? `${customer.address}, ${customer.city}` : '',
+      customerGstin: customer.gstin,
+      date: nowIso,
+      validUntil: params.validUntil,
+      items: params.items,
+      subtotal: totals.subtotal,
+      totalDiscount: totals.totalDiscount,
+      totalTax: totals.totalTax,
+      roundOff: totals.roundOff,
+      grandTotal: totals.grandTotal,
+      status: params.status || 'Draft',
+      isZeroGst: Boolean(params.isZeroGst),
+      isInterState,
+      notes: params.notes,
+      createdBy: stateRef.current.currentUser.name,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+
+    const auditLog = addAuditLog(
+      'QUOTE_CREATED',
+      'Quote',
+      quoteNum,
+      `Created quotation ${quoteNum} for ${totals.grandTotal} for ${customer.name}`
+    );
+
+    setState((prev) => ({
+      ...prev,
+      quotes: [newQuote, ...(prev.quotes ?? [])],
+      auditLogs: [auditLog, ...prev.auditLogs],
+      business: { ...prev.business, nextQuoteNumber: (prev.business.nextQuoteNumber ?? 1) + 1 },
+    }));
+
+    return newQuote;
+  };
+
+  const updateQuote = (id: string, quoteData: Partial<Quote>) => {
+    const nowIso = new Date().toISOString();
+    const auditLog = addAuditLog(
+      'QUOTE_UPDATED',
+      'Quote',
+      id,
+      quoteData.status
+        ? `Quotation marked as ${quoteData.status}`
+        : `Updated quotation details`
+    );
+    setState((prev) => ({
+      ...prev,
+      quotes: (prev.quotes ?? []).map((q) => (q.id === id ? { ...q, ...quoteData, updatedAt: nowIso } : q)),
+      auditLogs: [auditLog, ...prev.auditLogs],
+    }));
+  };
+
+  const deleteQuote = (id: string): boolean => {
+    const quote = (stateRef.current.quotes ?? []).find((q) => q.id === id);
+    if (!quote) return false;
+
+    const auditLog = addAuditLog(
+      'QUOTE_DELETED',
+      'Quote',
+      quote.quoteNumber,
+      `Deleted quotation ${quote.quoteNumber} for ${quote.customerName}`
+    );
+    setState((prev) => ({
+      ...prev,
+      quotes: (prev.quotes ?? []).filter((q) => q.id !== id),
+      auditLogs: [auditLog, ...prev.auditLogs],
+    }));
+    return true;
+  };
+
+  /** Turn an accepted quote into a real sale (full pipeline: stock check, invoice, khata). */
+  const convertQuoteToSale = (
+    quoteId: string,
+    params: { amountPaid: number; paymentMethod: PaymentMethod }
+  ): { sale: Sale; invoice: Invoice } | null => {
+    const quote = (stateRef.current.quotes ?? []).find((q) => q.id === quoteId);
+    if (!quote || quote.status === 'Converted') return null;
+
+    // Reuse the complete sale pipeline (stock validation, invoice, payment, khata)
+    const { sale, invoice } = createSale({
+      customerId: quote.customerId,
+      items: quote.items,
+      amountPaid: params.amountPaid,
+      paymentMethod: params.paymentMethod,
+      isZeroGst: quote.isZeroGst,
+      notes: quote.notes ? `From quote ${quote.quoteNumber}. ${quote.notes}` : `From quote ${quote.quoteNumber}`,
+    });
+
+    const nowIso = new Date().toISOString();
+    const auditLog = addAuditLog(
+      'QUOTE_CONVERTED',
+      'Quote',
+      quote.quoteNumber,
+      `Converted quote ${quote.quoteNumber} into invoice ${sale.invoiceNumber}`
+    );
+
+    setState((prev) => ({
+      ...prev,
+      quotes: (prev.quotes ?? []).map((q) =>
+        q.id === quoteId
+          ? { ...q, status: 'Converted' as const, convertedSaleId: sale.id, updatedAt: nowIso }
+          : q
+      ),
+      auditLogs: [auditLog, ...prev.auditLogs],
+    }));
+
+    return { sale, invoice };
+  };
+
+  // ----------------------------------------------------
   // 4. RECORD PAYMENT (Fixed: prev-based, overpayment validation, generateId, monotonic numbering)
   // ----------------------------------------------------
   const recordPayment = (params: {
@@ -1759,6 +1920,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteSale,
         deletePayment,
         processSalesReturn,
+        createQuote,
+        updateQuote,
+        deleteQuote,
+        convertQuoteToSale,
         addCustomer,
         updateCustomer,
         deleteCustomer,
@@ -1793,6 +1958,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createDeliveryChallan,
         updateChallanStatus,
         deliveryChallans: state.deliveryChallans || [],
+        quotes: state.quotes ?? [],
       }}
     >
       {children}
